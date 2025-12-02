@@ -26,7 +26,7 @@
     "predeploy": "npm run build",
     "deploy": "gh-pages -d build",
     "start": "react-scripts start",
-    "build": "react-scripts build",
+    "build": "cross-env GENERATE_SOURCEMAP=false react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
@@ -50,6 +50,7 @@
   },
   "devDependencies": {
     "@types/node": "^18.15.0",
+    "cross-env": "^10.1.0",
     "gh-pages": "^5.0.0",
     "tailwindcss": "^3.2.7"
   }

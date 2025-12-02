@@ -1,46 +1,145 @@
 import { parsePgn, startingPosition } from "chessops/pgn";
+import type { ChildNode, Game, PgnNodeData } from "chessops/pgn";
 
-function printPaths(node: any): string[][] {
-  let path = Array(1000).fill("");
-  let paths: string[][] = [];
+import type { OpeningAnnotation, OpeningMetadata } from "./Types";
 
-  pathsRecur(node, path, paths, 0);
-
-  return paths;
+export interface ParsedOpeningData {
+  lines: string[][];
+  annotations: OpeningAnnotation[];
+  metadata: OpeningMetadata;
 }
 
-function pathsRecur(node: any, path: any, paths: string[][], pathLen: number) {
-  if (node == null) {
+const headersToMetadata = (headers: Map<string, string>): OpeningMetadata => {
+  const eco = headers.get("ECO") ?? undefined;
+  const opening = headers.get("Opening") ?? undefined;
+  const variation = headers.get("Variation") ?? undefined;
+  const event = headers.get("Event") ?? undefined;
+  const site = headers.get("Site") ?? undefined;
+  const source =
+    headers.get("Annotator") ??
+    headers.get("Source") ??
+    headers.get("Author") ??
+    undefined;
+
+  return {
+    ...(eco ? { eco } : {}),
+    ...(opening ? { opening } : {}),
+    ...(variation ? { variation } : {}),
+    ...(event ? { event } : {}),
+    ...(site ? { site } : {}),
+    ...(source ? { source } : {}),
+  };
+};
+
+const mergeMetadata = (
+  target: OpeningMetadata,
+  source: OpeningMetadata
+): void => {
+  (Object.keys(source) as Array<keyof OpeningMetadata>).forEach((key) => {
+    if (!target[key] && source[key]) {
+      target[key] = source[key];
+    }
+  });
+};
+
+const collectNodeComments = (
+  node: ChildNode<PgnNodeData>,
+  path: string[],
+  annotations: OpeningAnnotation[],
+  annotationId: () => string
+): void => {
+  const payload = [
+    ...(node.data.startingComments ?? []),
+    ...(node.data.comments ?? []),
+  ];
+
+  payload
+    .map((comment) => comment?.trim())
+    .filter((comment): comment is string => Boolean(comment))
+    .forEach((commentText) => {
+      annotations.push({
+        id: annotationId(),
+        path: [...path],
+        comment: commentText,
+      });
+    });
+};
+
+const walkNode = (
+  node: ChildNode<PgnNodeData>,
+  path: string[],
+  lines: string[][],
+  annotations: OpeningAnnotation[],
+  annotationId: () => string
+): void => {
+  const san = node.data?.san;
+
+  if (!san) {
+    node.children.forEach((child) =>
+      walkNode(child as ChildNode<PgnNodeData>, path, lines, annotations, annotationId)
+    );
     return;
   }
 
-  path[pathLen] = node.data.san;
-  pathLen++;
+  const currentPath = [...path, san];
+  collectNodeComments(node, currentPath, annotations, annotationId);
 
-  // console.log(node);
-
-  if (node.children.length == 0) {
-    paths.push(path.slice(0, pathLen));
-  } else {
-    for (const child of node.children) {
-      //   console.log(child);
-      pathsRecur(child, path, paths, pathLen);
-    }
+  if (node.children.length === 0) {
+    lines.push(currentPath);
+    return;
   }
-}
 
-export default function parseLines(pgn: string): string[][] {
+  node.children.forEach((child) =>
+    walkNode(child as ChildNode<PgnNodeData>, currentPath, lines, annotations, annotationId)
+  );
+};
+
+const collectGameData = (
+  game: Game<PgnNodeData>,
+  lines: string[][],
+  annotations: OpeningAnnotation[],
+  metadata: OpeningMetadata,
+  annotationId: () => string
+): void => {
+  startingPosition(game.headers).unwrap();
+  mergeMetadata(metadata, headersToMetadata(game.headers));
+
+  const rootComments = game.comments ?? [];
+  rootComments
+    .map((comment) => comment?.trim())
+    .filter((comment): comment is string => Boolean(comment))
+    .forEach((comment) => {
+      annotations.push({
+        id: annotationId(),
+        path: [],
+        comment,
+        label: "Intro",
+      });
+    });
+
+  for (const child of game.moves.children) {
+    walkNode(child as ChildNode<PgnNodeData>, [], lines, annotations, annotationId);
+  }
+};
+
+export const parseOpeningPgn = (pgn: string): ParsedOpeningData => {
   const games = parsePgn(pgn);
+  const lines: string[][] = [];
+  const annotations: OpeningAnnotation[] = [];
+  const metadata: OpeningMetadata = {};
+  let annotationCounter = 0;
 
-  let paths: string[][] = [];
+  const nextAnnotationId = () => `annot-${annotationCounter++}`;
 
   for (const game of games) {
-    const pos = startingPosition(game.headers).unwrap();
-
-    for (const child of game.moves.children) {
-      paths.push(...printPaths(child));
-    }
+    collectGameData(game, lines, annotations, metadata, nextAnnotationId);
   }
 
-  return paths;
-}
+  return { lines, annotations, metadata };
+};
+
+const parseLines = (pgn: string): string[][] => {
+  return parseOpeningPgn(pgn).lines;
+};
+
+export default parseLines;

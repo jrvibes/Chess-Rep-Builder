@@ -1,11 +1,36 @@
 export type BoardOrientation = "white" | "black" | undefined;
 
+export type DifficultyLevel = 1 | 2 | 3;
+
+export interface OpeningAnnotation {
+  id: string;
+  path: string[];
+  comment: string;
+  label?: string;
+}
+
+export interface OpeningMetadata {
+  eco?: string;
+  opening?: string;
+  variation?: string;
+  event?: string;
+  site?: string;
+  source?: string;
+}
+
 export interface Opening {
+  id: string;
   name: string;
   created: string;
   fen: string;
   pgn: string;
   side: BoardOrientation;
+  colorGroup?: BoardOrientation;
+  difficulty?: DifficultyLevel;
+  tags?: string[];
+  summary?: string;
+  annotations?: OpeningAnnotation[];
+  metadata?: OpeningMetadata;
 }
 
 export type Key =
